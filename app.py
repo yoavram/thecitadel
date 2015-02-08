@@ -152,12 +152,15 @@ def download(token):
 	if not token_data:
 		return abort(403)
 	if not 'email' in token_data or not token_data['email']:
+		app.logger.error('No email in token: %s' % token)
 		return abort(500)
 	email = token_data['email']
 	user = User.query.get(email)
 	if not user:
+		app.logger.error("User not found: %s" % email)
 		return abort(503)
 	if not user.is_active:
+		app.logger.debug("User unactive: %s" % email)
 		return abort(410)
 	user.is_active = False
 	db.session.commit()
