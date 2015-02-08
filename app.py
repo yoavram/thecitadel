@@ -57,7 +57,7 @@ else:
 if not app.config['RESOURCE_FILEPATH']:
 	app.logger.error('RESOURCE_FILEPATH config var is missing')
 
-	
+
 # services
 sslify = SSLify(app)
 mandrill = Mandrill(app)
@@ -82,6 +82,9 @@ class User(db.Model):
     email = db.Column(db.String, primary_key=True)
     datetime = db.Column(db.DateTime)
     is_active = db.Column(db.Boolean, default=True)
+
+    def __repr__(self):
+    	return self.email
 
 
 def generate_token(email):
