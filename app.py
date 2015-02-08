@@ -141,8 +141,7 @@ def signin():
 	    from_name='The Citadel',
 	    subject='The Citadel signin',
 	    html=mail_template % (download_url, download_url),
-	    to=[{'email': email}],
-	    text='Hello World'
+	    to=[{'email': email}]
 	)		
 	response = response.json()[0]
 	if response['status'] != 'sent':
