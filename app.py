@@ -7,22 +7,24 @@ sys.stdout = codecs.getwriter('utf-8')(sys.stdout)
 
 import os
 import re
-from flask import Flask, abort, make_response, request, Response, redirect, current_app,jsonify
 from datetime import timedelta, datetime
-from flask.ext.httpauth import HTTPBasicAuth
+from flask import Flask, request, redirect, jsonify, url_for
 from flask_sslify import SSLify
 from flask.ext.mandrill import Mandrill
 from flask.ext.sqlalchemy import SQLAlchemy
-from models import User
-import uuid
-
 from itsdangerous import TimedJSONWebSignatureSerializer as Serializer
 from itsdangerous import SignatureExpired, BadSignature
 import logging
 from passlib.apps import custom_app_context as pwd_context
-from functools import wraps
-import urlparse
-import redis
+import smartfile
+from sqlalchemy.dialects.postgresql import JSON
+
+
+mail_template = '''<p>Thank you for registering .<br>
+To proceed, please follow this link or copy it into your browser address bar:<br>
+<a href='%s'>%s</a>
+</p>
+'''
 
 
 # add environment variables using 'heroku config:add VARIABLE_NAME=variable_name'
@@ -35,13 +37,12 @@ REDIS_URI = os.environ.get('REDISCLOUD_URL', 'redis://127.0.0.1:6379')
 MANDRILL_API_KEY = os.environ.get('MANDRILL_APIKEY')
 MANDRILL_DEFAULT_FROM = os.environ.get('MANDRILL_USERNAME')
 SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL')
-
+RESOURCE_FILEPATH = os.environ.get('TARGET_FILEPATH')
 
 app = Flask(__name__)
-sslify = SSLify(app)
-auth = HTTPBasicAuth()
 app.config.from_object(__name__) 
-mandrill = Mandrill(app)
+
+# logging
 stream_handler = logging.StreamHandler()
 app.logger.addHandler(stream_handler)
 app.logger.setLevel(logging.INFO)
@@ -52,23 +53,35 @@ if app.debug:
 else:
 	app.logger.info('Running in prod mode')
 
-# init db
+# services
+sslify = SSLify(app)
+mandrill = Mandrill(app)
 db = SQLAlchemy(app)
+if db:
+	app.logger.info("Connected to database")
+else:
+	app.logger.error("Failed connecting to database")
+try:
+	smartfile_client = smartfile.BasicClient()
+	response = smartfile_client.get('/ping')
+	if response and 'ping' in response and response['ping'] == 'pong':
+		app.logger.info("Connected to file store")
+	else:
+		app.logger.error("Failed connecting to file store")
+except:
+		app.logger.error("Failed connecting to file store")
 
-# # init cache store
-# app.logger.info("Connecting to Redis")
-# redis_url = urlparse.urlparse(app.config['REDIS_URI'])
-# redis_store = redis.Redis(host=redis_url.hostname, port=redis_url.port, password=redis_url.password) 
-# try:
-# 	if redis_store.ping():
-# 		app.logger.info("Connected to Redis")
-# except:
-# 	app.logger.error("Failed connecting to Redis")
+
+class User(db.Model):
+    __tablename__ = 'user'    
+    email = db.Column(db.String, primary_key=True)
+    datetime = db.Column(db.DateTime)
+    is_active = db.Column(db.Boolean, default=True)
 
 
 def generate_token(email):
 	s = Serializer(app.config['SECRET_KEY'], expires_in=app.config['TOKEN_EXPIRATION'])
-	return s.dumps({ 'id': user.id, 'email': user.email, 'timestamp': datetime.now().isoformat() })
+	return s.dumps({ 'email': email })
 
 
 def verify_token(token):
@@ -76,17 +89,11 @@ def verify_token(token):
 	try:
 		data = s.loads(token)
 	except SignatureExpired:
-		app.logger.info("Token %s from %s expired" % (token, data.get('email', '?')))
+		app.logger.info("Token %s expired" % token)
 		return False # valid token, but expired
 	except BadSignature:
 		app.logger.info("Bad token: %s" % token)
-		return False # invalid token
-	if 'timestamp' not in data:
-		app.logger.info("Missing timestamp in token: %s" % token)
-		return False
-	if 'email' not in data:
-		app.logger.info("Missing email in token: %s" % token)
-		return False
+		return False # invalid token	
 	return data
 
 
@@ -94,56 +101,63 @@ def verify_token(token):
 def login():
 	if request.method == "GET":
 		return app.send_static_file('login.html')
-	else:		
-		password = request.form.get('password')		
-		if not pwd_context.verify(password, app.config['PASSWORD']):
-			app.logger("Bad password: %s" % password)
-			abort(403)
-		email = request.form.get('email')
-		if not email:
-			abort(400)
-		app.logger("Successful login with email: %s" % email)
+			
+	password = request.form.get('password', '')		
+	if not pwd_context.verify(password, app.config['PASSWORD']):
+		app.logger.info("Bad password: %s" % password)
+		return jsonify(success=False, reason="Bad password"), 403
+	email = request.form.get('email', '')
+	if not email:
+		app.logger.info("Missing email in request")
+		return jsonify(success=False, reason="Email missing request"), 400
+	app.logger("Successful login with email: %s" % email)
 
-
-		user = User(id=str(uuid.uuid4()),
-            		email=email)
-		db.session.add(user)
-    	db.session.commit()
-
-		token = generate_token(user)
-		app.logger("Generated token %s for email %s" % (token, email))
-
-		user.token = token
-    	db.session.commit()
-
-		response = mandrill.send_email(
-		    from_name='The Citadel',
-		    subject='The Citadel Login',
-		    html="<p>Thank you for registering with us.<br>To download the data please follow this link or copy it into your browser address bar:<br><a href='%s'>%s</a></p>" % (token, token),
-		    to=[{'email': email}],
-		    text='Hello World'
-		)		
-		response = response.json()[0]
-		if not response['status'] == 'sent':
-			app.logger.warn("Failed sending mail to %s, %s" % (email, response['reject_reason']))
-			return app.send_static_file('failure.html')			
-		app.logger.debug("Mail sent successfuly to %s" % email)
-		return app.send_static_file('success.html')
-		
+	# check if user already exists
+	user = User.query.get(email)
+	if user:
+		app.logger.info("Email %s already exists" % (email))
+		return jsonify(success=False, reason="Email %s already exists"), 400
+	# create new user
+	user = User(email=email, timestamp=datetime.now())
+	db.session.add(user)
+	db.session.commit()
+	# create user token
+	token = generate_token(email)
+	app.logger("Generated token %s for email %s" % (token, email))
+	# send email with user token
+	response = mandrill.send_email(
+	    from_name='The Citadel',
+	    subject='The Citadel Login',
+	    html=mail_template % (url_for(download) + token),
+	    to=[{'email': email}],
+	    text='Hello World'
+	)		
+	response = response.json()[0]
+	if response['status'] != 'sent':
+		app.logger.warn("Failed sending mail to %s: %s" % (email, response['reject_reason']))
+		return jsonify(success=False, reason=response['reject_reason']), 400
+	app.logger.debug("Mail sent successfuly to %s" % email)
+	return jsonify(success=True), 200
+	
 
 @app.route('/download/<string:token>')
 def download(token):
 	token_data = verify_token(token)	
-	if not token_data:		
-		abort(403)
-	user = User.query.get(token_data['id'])
-	if user.is_active:
-		user.is_active = False
-		db.session.commit()
-		return app.send_static_file('download.html')
-	else:
-		# TODO error
-		abort(403)
+	if not token_data:
+		return jsonify(success=False, reason='Bad token: %s' % token), 403
+	if not 'email' in token_data or not token_data['email']:
+		return jsonify(success=False, reason='Token missing email: %s' % token), 500
+	email = token_data['email']
+	user = User.query.get(email)
+	if not user:
+		return jsonify(success=False, reason='Email address not found : %s' % email), 503
+	if not user.is_active:
+		return jsonify(success=False, reason='Email address %s already used to download' % email), 410
+	user.is_active = False
+	db.session.commit()
+	expiration = ((user.datetime + timedelta(app.config['TOKEN_EXPIRATION'])) - datetime.now()).total_seconds()
+	response = smartfile_client.post('/path/exchange', path=app.config['RESOURCE_FILEPATH'], expiration=expiration)
+	return redirect(response.get('url'))
 
 
 if __name__=='__main__':
