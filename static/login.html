@@ -46,6 +46,7 @@
     <script type="text/javascript">
     $("#loginForm").submit(function(e)
     {
+        $(this).find('button[type=submit]').attr('disabled', 'disabled');
         var postData = $(this).serializeArray();
         var formURL = $(this).attr("action");
         $.ajax(
@@ -63,7 +64,6 @@
             }
         });
         e.preventDefault(); //STOP default action
-        e.unbind(); //unbind. to stop multiple form submit.
     });
     </script>
   </body>

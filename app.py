@@ -8,7 +8,7 @@ sys.stdout = codecs.getwriter('utf-8')(sys.stdout)
 import os
 import re
 from datetime import timedelta, datetime
-from flask import Flask, request, redirect, jsonify, url_for
+from flask import Flask, request, redirect, jsonify, url_for, abort
 from flask_sslify import SSLify
 from flask.ext.mandrill import Mandrill
 from flask.ext.sqlalchemy import SQLAlchemy
@@ -22,22 +22,24 @@ from sqlalchemy.dialects.postgresql import JSON
 
 mail_template = '''<p>Thank you for registering .<br>
 To proceed, please follow this link or copy it into your browser address bar:<br>
-<a href='%s'>%s</a>
+<a href='%s'>%s</a>.<br>
+<br>
+The Citadel.
 </p>
 '''
 
 
 # add environment variables using 'heroku config:add VARIABLE_NAME=variable_name'
-DEBUG = os.environ.get('DEBUG', 'True') == 'True'
+DEBUG = os.environ.get('DEBUG', 'True').lower() == 'true'
 TESTING = DEBUG
 PASSWORD = os.environ.get('PASSWORD', '$6$rounds=100661$1MPIOVHOyNUNicFJ$6oJ1NSrvVKvKKPvrLinuAEw.ObwBXn10pWQ3KmPcPsYpvuRE0O1XZRHxns4/zuTn2dSQoJUw488tVRvN9RjTx0')
 SECRET_KEY = os.environ.get('SECRET_KEY', 'thebestsecretismysecret')
 TOKEN_EXPIRATION = int(os.environ.get('TOKEN_EXPIRATION', 3600)) # in secs
-REDIS_URI = os.environ.get('REDISCLOUD_URL', 'redis://127.0.0.1:6379')
 MANDRILL_API_KEY = os.environ.get('MANDRILL_APIKEY')
 MANDRILL_DEFAULT_FROM = os.environ.get('MANDRILL_USERNAME')
 SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL')
-RESOURCE_FILEPATH = os.environ.get('TARGET_FILEPATH')
+RESOURCE_FILEPATH = os.environ.get('RESOURCE_FILEPATH')
+assert RESOURCE_FILEPATH
 
 app = Flask(__name__)
 app.config.from_object(__name__) 
@@ -96,12 +98,15 @@ def verify_token(token):
 		return False # invalid token	
 	return data
 
+@app.route('/')
+def root():
+	return redirect(url_for('login'))
+
 
 @app.route('/login', methods=("GET", "POST"))
 def login():
 	if request.method == "GET":
 		return app.send_static_file('login.html')
-			
 	password = request.form.get('password', '')		
 	if not pwd_context.verify(password, app.config['PASSWORD']):
 		app.logger.info("Bad password: %s" % password)
@@ -110,25 +115,26 @@ def login():
 	if not email:
 		app.logger.info("Missing email in request")
 		return jsonify(success=False, reason="Email missing request"), 400
-	app.logger("Successful login with email: %s" % email)
+	app.logger.info("Successful login with email: %s" % email)
 
 	# check if user already exists
 	user = User.query.get(email)
-	if user:
-		app.logger.info("Email %s already exists" % (email))
-		return jsonify(success=False, reason="Email %s already exists"), 400
+	if not user:
+	#	app.logger.info("Email %s already exists" % (email))
+	#	return jsonify(success=False, reason="Email %s already exists"), 400
 	# create new user
-	user = User(email=email, timestamp=datetime.now())
-	db.session.add(user)
-	db.session.commit()
+		user = User(email=email, datetime=datetime.now())
+		db.session.add(user)
+		db.session.commit()
 	# create user token
 	token = generate_token(email)
-	app.logger("Generated token %s for email %s" % (token, email))
+	app.logger.info("Generated token %s for email %s" % (token, email))
 	# send email with user token
+	download_url = request.url_root[:-1] + url_for('download', token=token)
 	response = mandrill.send_email(
 	    from_name='The Citadel',
 	    subject='The Citadel Login',
-	    html=mail_template % (url_for(download) + token),
+	    html=mail_template % (download_url, download_url),
 	    to=[{'email': email}],
 	    text='Hello World'
 	)		
@@ -144,20 +150,27 @@ def login():
 def download(token):
 	token_data = verify_token(token)	
 	if not token_data:
-		return jsonify(success=False, reason='Bad token: %s' % token), 403
+		return abort(403)
 	if not 'email' in token_data or not token_data['email']:
-		return jsonify(success=False, reason='Token missing email: %s' % token), 500
+		return abort(500)
 	email = token_data['email']
 	user = User.query.get(email)
 	if not user:
-		return jsonify(success=False, reason='Email address not found : %s' % email), 503
-	if not user.is_active:
-		return jsonify(success=False, reason='Email address %s already used to download' % email), 410
+		return abort(503)
+	#if not user.is_active:
+	#	return abort(410)
 	user.is_active = False
 	db.session.commit()
 	expiration = ((user.datetime + timedelta(app.config['TOKEN_EXPIRATION'])) - datetime.now()).total_seconds()
-	response = smartfile_client.post('/path/exchange', path=app.config['RESOURCE_FILEPATH'], expiration=expiration)
-	return redirect(response.get('url'))
+	try:
+		app.logger.debug("Creating a link for resource: %s" % app.config['RESOURCE_FILEPATH'])
+		response = smartfile_client.post('/path/exchange', path=app.config['RESOURCE_FILEPATH'], expiration=expiration)
+		app.logger.debug("SmartFile response: %s" % response)
+		return redirect(response.get('url'))
+	except smartfile.ResponseError as e:
+		#app.logger.error("Failed creating a link for token %s: %s" % (token, e))
+		app.logger.error("Failed creating a link: %s" % ( e))
+		abort(500)
 
 
 if __name__=='__main__':
