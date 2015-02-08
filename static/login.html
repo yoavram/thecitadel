@@ -21,13 +21,12 @@
     <!--[if lt IE 9]>
       <script src="https://oss.maxcdn.com/html5shiv/3.7.2/html5shiv.min.js"></script>
       <script src="https://oss.maxcdn.com/respond/1.4.2/respond.min.js"></script>
-    <![endif]-->
+    <![endif]-->    
   </head>
 
   <body>
 
-    <div class="container">
-
+    <div class="container" id="main">
       <form class="form-signin" id="loginForm" action="/login" method="POST">
         <h2 class="form-signin-heading">Please sign in</h2>
         <label for="inputEmail" class="sr-only">Email address</label>
@@ -35,18 +34,40 @@
         <label for="inputPassword" class="sr-only">Password</label>
         <input type="password" name="password" id="inputPassword" class="form-control" placeholder="Password" required>        
         <button class="btn btn-lg btn-primary btn-block" type="submit">Sign in</button>
-      </form>
-
+        <br>
+        <span id="message" class="label"></span>
+      </form>      
     </div> <!-- /container -->
 
     <!-- jQeury -->
     <script src="//cdnjs.cloudflare.com/ajax/libs/jquery/2.1.3/jquery.min.js"></script>
     <!-- IE10 viewport hack for Surface/desktop Windows 8 bug -->
     <script src="/static/ie10-viewport-bug-workaround.js"></script>
+    <script src="//cdnjs.cloudflare.com/ajax/libs/spin.js/2.0.1/spin.min.js"></script>
     <script type="text/javascript">
-    $("#loginForm").submit(function(e)
-    {
-        $(this).find('button[type=submit]').attr('disabled', 'disabled');
+    var opts = {
+      lines: 13, // The number of lines to draw
+      length: 9, // The length of each line
+      width: 10, // The line thickness
+      radius: 25, // The radius of the inner circle
+      corners: 1, // Corner roundness (0..1)
+      rotate: 0, // The rotation offset
+      direction: 1, // 1: clockwise, -1: counterclockwise
+      color: '#6B9CC6', // #rgb or #rrggbb or array of colors
+      speed: 1, // Rounds per second
+      trail: 60, // Afterglow percentage
+      shadow: false, // Whether to render a shadow
+      hwaccel: false, // Whether to use hardware acceleration
+      className: 'spinner', // The CSS class to assign to the spinner
+      zIndex: 2e9, // The z-index (defaults to 2000000000)
+      top: '50%', // Top position relative to parent
+      left: '50%' // Left position relative to parent
+    };
+    var spinner = new Spinner(opts);
+
+    $("#loginForm").submit(function(e) {
+        spinner.spin(document.getElementById('main'));
+        $('button[type=submit]').attr('disabled', true);
         var postData = $(this).serializeArray();
         var formURL = $(this).attr("action");
         $.ajax(
@@ -56,15 +77,29 @@
             data : postData,
             success:function(data, textStatus, jqXHR) 
             {
-                alert("Login succeeded, please check your email to continue.");
+                spinner.stop();
+                if (data.success) {
+                    $('#message').text("Login succeeded, please check your email to continue.");
+                    $('#message').removeClass("label-danger");
+                    $('#message').addClass("label-success");
+                } else {
+                    $('#message').text("Login failed, please try again.");
+                    $('#message').removeClass("label-success");
+                    $('#message').addClass("label-danger")
+                    $('button[type=submit]').attr('disabled', false);
+                }
             },
             error: function(jqXHR, textStatus, errorThrown) 
             {
-                alert("Login failed, please try again or contact the administrator.");
+                spinner.stop();
+                $('#message').text("Login failed, please try again.");
+                $('#message').removeClass("label-success");
+                $('#message').addClass("label-danger")
+                $('button[type=submit]').attr('disabled', false);
             }
         });
         e.preventDefault(); //STOP default action
     });
-    </script>
+    </script>    
   </body>
 </html>
