@@ -129,9 +129,9 @@ def signin():
 		app.logger.info("Email %s already exists" % (email))
 		return jsonify(success=False, reason="Email %s already exists"), 400
 	# create new user
-		user = User(email=email, datetime=datetime.now())
-		db.session.add(user)
-		db.session.commit()
+	user = User(email=email, datetime=datetime.now())
+	db.session.add(user)
+	db.session.commit()
 	# create user token
 	token = generate_token(email)
 	app.logger.info("Generated token %s for email %s" % (token, email))
