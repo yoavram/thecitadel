@@ -12,9 +12,10 @@ Jinja2==2.7.3
 Mako==1.0.1
 mandrill==1.0.57
 MarkupSafe==0.23
+newrelic==2.42.0.35
 oauthlib==0.7.2
 passlib==1.6.2
-psycopg2==2.5.3
+psycopg2==2.5.2
 requests==2.5.1
 requests-oauthlib==0.4.2
 smartfile==2.1.post6
