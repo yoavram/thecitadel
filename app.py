@@ -100,13 +100,13 @@ def verify_token(token):
 
 @app.route('/')
 def root():
-	return redirect(url_for('login'))
+	return redirect(url_for('signin'))
 
 
-@app.route('/login', methods=("GET", "POST"))
-def login():
+@app.route('/signin', methods=("GET", "POST"))
+def signin():
 	if request.method == "GET":
-		return app.send_static_file('login.html')
+		return app.send_static_file('signin.html')
 	password = request.form.get('password', '')		
 	if not pwd_context.verify(password, app.config['PASSWORD']):
 		app.logger.info("Bad password: %s" % password)
@@ -115,7 +115,7 @@ def login():
 	if not email:
 		app.logger.info("Missing email in request")
 		return jsonify(success=False, reason="Email missing request"), 400
-	app.logger.info("Successful login with email: %s" % email)
+	app.logger.info("Successful signin with email: %s" % email)
 
 	# check if user already exists
 	user = User.query.get(email)
@@ -133,7 +133,7 @@ def login():
 	download_url = request.url_root[:-1] + url_for('download', token=token)
 	response = mandrill.send_email(
 	    from_name='The Citadel',
-	    subject='The Citadel Login',
+	    subject='The Citadel signin',
 	    html=mail_template % (download_url, download_url),
 	    to=[{'email': email}],
 	    text='Hello World'
