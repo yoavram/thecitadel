@@ -119,9 +119,9 @@ def login():
 
 	# check if user already exists
 	user = User.query.get(email)
-	if not user:
-	#	app.logger.info("Email %s already exists" % (email))
-	#	return jsonify(success=False, reason="Email %s already exists"), 400
+	if user:
+		app.logger.info("Email %s already exists" % (email))
+		return jsonify(success=False, reason="Email %s already exists"), 400
 	# create new user
 		user = User(email=email, datetime=datetime.now())
 		db.session.add(user)
@@ -157,8 +157,8 @@ def download(token):
 	user = User.query.get(email)
 	if not user:
 		return abort(503)
-	#if not user.is_active:
-	#	return abort(410)
+	if not user.is_active:
+		return abort(410)
 	user.is_active = False
 	db.session.commit()
 	expiration = ((user.datetime + timedelta(app.config['TOKEN_EXPIRATION'])) - datetime.now()).total_seconds()
