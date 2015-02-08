@@ -39,7 +39,7 @@ MANDRILL_API_KEY = os.environ.get('MANDRILL_APIKEY')
 MANDRILL_DEFAULT_FROM = os.environ.get('MANDRILL_USERNAME')
 SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL')
 RESOURCE_FILEPATH = os.environ.get('RESOURCE_FILEPATH')
-assert RESOURCE_FILEPATH
+
 
 app = Flask(__name__)
 app.config.from_object(__name__) 
@@ -54,7 +54,10 @@ if app.debug:
 	app.logger.info('Running in debug mode')
 else:
 	app.logger.info('Running in prod mode')
+if not app.config['RESOURCE_FILEPATH']:
+	app.logger.error('RESOURCE_FILEPATH config var is missing')
 
+	
 # services
 sslify = SSLify(app)
 mandrill = Mandrill(app)
