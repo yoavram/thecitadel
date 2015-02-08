@@ -9,7 +9,7 @@
     <meta name="author" content="">
     <!-- <link rel="icon" href="/static/favicon.ico"> -->
 
-    <title>Login</title>
+    <title>Sign in | The Citadel</title>
 
     <!-- Bootstrap core CSS -->
     <link href="//maxcdn.bootstrapcdn.com/bootstrap/3.3.2/css/bootstrap.min.css" rel="stylesheet">
@@ -30,7 +30,7 @@
   <body>
 
     <div class="container" id="main">
-      <form class="form-signin" id="loginForm" action="/signin" method="POST">
+      <form class="form-signin" id="signinForm" action="/signin" method="POST">
         <h1 class="form-signin-heading">The Citadel <sup><i class="glyphicon glyphicon-king glyphicon-hover"></i></h1>
         <h3 class="form-signin-heading">Please sign in</h3>
         <div class="form-group">
@@ -71,7 +71,7 @@ var opts = {
   };
   var spinner = new Spinner(opts);
 
-  $("#loginForm").submit(function(e) {
+  $("#signinForm").submit(function(e) {
     spinner.spin(document.getElementById('main'));
     $('button[type=submit]').attr('disabled', true);
     var postData = $(this).serializeArray();
@@ -85,11 +85,11 @@ var opts = {
         {
             spinner.stop();
             if (data.success) {
-                $('#message').text("Login succeeded, please check your email to continue.");
+                $('#message').text("Sign in succeeded, please check your email to continue.");
                 $('#message').removeClass("label-danger");
                 $('#message').addClass("label-success");
             } else {
-                $('#message').text("Login failed, please try again.");
+                $('#message').text("Sign in failed, please try again.");
                 $('#message').removeClass("label-success");
                 $('#message').addClass("label-danger")
                 $('button[type=submit]').attr('disabled', false);
@@ -98,7 +98,7 @@ var opts = {
         error: function(jqXHR, textStatus, errorThrown) 
         {
             spinner.stop();
-            $('#message').text("Login failed, please try again.");
+            $('#message').text("Sign in failed, please try again.");
             $('#message').removeClass("label-success");
             $('#message').addClass("label-danger")
             $('button[type=submit]').attr('disabled', false);
