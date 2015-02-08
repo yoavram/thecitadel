@@ -12,6 +12,9 @@ from datetime import timedelta, datetime
 from flask.ext.httpauth import HTTPBasicAuth
 from flask_sslify import SSLify
 from flask.ext.mandrill import Mandrill
+from flask.ext.sqlalchemy import SQLAlchemy
+from models import User
+import uuid
 
 from itsdangerous import TimedJSONWebSignatureSerializer as Serializer
 from itsdangerous import SignatureExpired, BadSignature
@@ -31,6 +34,7 @@ TOKEN_EXPIRATION = int(os.environ.get('TOKEN_EXPIRATION', 3600)) # in secs
 REDIS_URI = os.environ.get('REDISCLOUD_URL', 'redis://127.0.0.1:6379')
 MANDRILL_API_KEY = os.environ.get('MANDRILL_APIKEY')
 MANDRILL_DEFAULT_FROM = os.environ.get('MANDRILL_USERNAME')
+SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL')
 
 
 app = Flask(__name__)
@@ -48,38 +52,98 @@ if app.debug:
 else:
 	app.logger.info('Running in prod mode')
 
-# init cache store
-app.logger.info("Connecting to Redis")
-redis_url = urlparse.urlparse(app.config['REDIS_URI'])
-redis_store = redis.Redis(host=redis_url.hostname, port=redis_url.port, password=redis_url.password) 
-try:
-	if redis_store.ping():
-		app.logger.info("Connected to Redis")
-except:
-	app.logger.error("Failed connecting to Redis")
+# init db
+db = SQLAlchemy(app)
 
+# # init cache store
+# app.logger.info("Connecting to Redis")
+# redis_url = urlparse.urlparse(app.config['REDIS_URI'])
+# redis_store = redis.Redis(host=redis_url.hostname, port=redis_url.port, password=redis_url.password) 
+# try:
+# 	if redis_store.ping():
+# 		app.logger.info("Connected to Redis")
+# except:
+# 	app.logger.error("Failed connecting to Redis")
+
+
+def generate_token(email):
+	s = Serializer(app.config['SECRET_KEY'], expires_in=app.config['TOKEN_EXPIRATION'])
+	return s.dumps({ 'id': user.id, 'email': user.email, 'timestamp': datetime.now().isoformat() })
+
+
+def verify_token(token):
+	s = Serializer(app.config['SECRET_KEY'])
+	try:
+		data = s.loads(token)
+	except SignatureExpired:
+		app.logger.info("Token %s from %s expired" % (token, data.get('email', '?')))
+		return False # valid token, but expired
+	except BadSignature:
+		app.logger.info("Bad token: %s" % token)
+		return False # invalid token
+	if 'timestamp' not in data:
+		app.logger.info("Missing timestamp in token: %s" % token)
+		return False
+	if 'email' not in data:
+		app.logger.info("Missing email in token: %s" % token)
+		return False
+	return data
 
 
 @app.route('/login', methods=("GET", "POST"))
 def login():
 	if request.method == "GET":
 		return app.send_static_file('login.html')
-	else:
-		email = request.form.get('email')
+	else:		
 		password = request.form.get('password')		
 		if not pwd_context.verify(password, app.config['PASSWORD']):
+			app.logger("Bad password: %s" % password)
 			abort(403)
+		email = request.form.get('email')
+		if not email:
+			abort(400)
+		app.logger("Successful login with email: %s" % email)
+
+
+		user = User(id=str(uuid.uuid4()),
+            		email=email)
+		db.session.add(user)
+    	db.session.commit()
+
+		token = generate_token(user)
+		app.logger("Generated token %s for email %s" % (token, email))
+
+		user.token = token
+    	db.session.commit()
+
 		response = mandrill.send_email(
 		    from_name='The Citadel',
-		    subject='Login',
+		    subject='The Citadel Login',
+		    html="<p>Thank you for registering with us.<br>To download the data please follow this link or copy it into your browser address bar:<br><a href='%s'>%s</a></p>" % (token, token),
 		    to=[{'email': email}],
 		    text='Hello World'
-		)
+		)		
 		response = response.json()[0]
-		if response['status'] == 'sent':
-			return "Sent mail to %s" % (response['email'])
-		else:
-			return "Failed sending mail to %s because" % (response['email'], response['reject_reason'])
+		if not response['status'] == 'sent':
+			app.logger.warn("Failed sending mail to %s, %s" % (email, response['reject_reason']))
+			return app.send_static_file('failure.html')			
+		app.logger.debug("Mail sent successfuly to %s" % email)
+		return app.send_static_file('success.html')
+		
+
+@app.route('/download/<string:token>')
+def download(token):
+	token_data = verify_token(token)	
+	if not token_data:		
+		abort(403)
+	user = User.query.get(token_data['id'])
+	if user.is_active:
+		user.is_active = False
+		db.session.commit()
+		return app.send_static_file('download.html')
+	else:
+		# TODO error
+		abort(403)
 
 
 if __name__=='__main__':
