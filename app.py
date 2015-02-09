@@ -35,6 +35,7 @@ TESTING = DEBUG
 PASSWORD = os.environ.get('PASSWORD', '$6$rounds=100661$1MPIOVHOyNUNicFJ$6oJ1NSrvVKvKKPvrLinuAEw.ObwBXn10pWQ3KmPcPsYpvuRE0O1XZRHxns4/zuTn2dSQoJUw488tVRvN9RjTx0')
 SECRET_KEY = os.environ.get('SECRET_KEY', 'thebestsecretismysecret')
 TOKEN_EXPIRATION = int(os.environ.get('TOKEN_EXPIRATION', 3600)) # in secs
+REDIRECT_EXPIRATION = int(os.environ.get('REDIRECT_EXPIRATION', 60)) # in secs
 MANDRILL_API_KEY = os.environ.get('MANDRILL_APIKEY')
 MANDRILL_DEFAULT_FROM = os.environ.get('MANDRILL_USERNAME')
 SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL')
@@ -113,7 +114,7 @@ def root():
 def signin():
 	if request.method == "GET":
 		return app.send_static_file('signin.html')
-	password = request.form.get('password', '')		
+	password = request.form.get('password', '')	
 	if not pwd_context.verify(password, app.config['PASSWORD']):
 		app.logger.info("Bad password: %s" % password)
 		return jsonify(success=False, reason="Bad password"), 403
@@ -128,18 +129,16 @@ def signin():
 	if user:
 		app.logger.info("Email %s already exists" % (email))
 		return jsonify(success=False, reason="Email %s already exists"), 400
-	# create new user
-	user = User(email=email, datetime=datetime.now())
-	db.session.add(user)
-	db.session.commit()
-	# create user token
+
+	# create email token
 	token = generate_token(email)
 	app.logger.info("Generated token %s for email %s" % (token, email))
-	# send email with user token
+
+	# send email with token
 	download_url = request.url_root[:-1] + url_for('download', token=token)
 	response = mandrill.send_email(
 	    from_name='The Citadel',
-	    subject='The Citadel signin',
+	    subject='The Citadel Sign In',
 	    html=mail_template % (download_url, download_url),
 	    to=[{'email': email}]
 	)		
@@ -162,14 +161,16 @@ def download(token):
 	email = token_data['email']
 	user = User.query.get(email)
 	if not user:
-		app.logger.error("User not found: %s" % email)
-		return abort(503)
-	if not user.is_active:
+		# create new user
+		user = User(email=email, datetime=datetime.now())
+		db.session.add(user)
+		db.session.commit()	
+	if user and not user.is_active:
 		app.logger.debug("User unactive: %s" % email)
 		return abort(410)
 	user.is_active = False
 	db.session.commit()
-	expiration = ((user.datetime + timedelta(app.config['TOKEN_EXPIRATION'])) - datetime.now()).total_seconds()
+	expiration = app.config['REDIRECT_EXPIRATION']
 	try:
 		app.logger.debug("Creating a link for resource: %s" % app.config['RESOURCE_FILEPATH'])
 		response = smartfile_client.post('/path/exchange', path=app.config['RESOURCE_FILEPATH'], expiration=expiration)
