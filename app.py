@@ -83,7 +83,7 @@ class User(db.Model):
     __tablename__ = 'user'    
     email = db.Column(db.String, primary_key=True)
     datetime = db.Column(db.DateTime)
-    is_active = db.Column(db.Boolean, default=True)
+    downloaded = db.Column(db.Boolean, default=False)
 
     def __repr__(self):
     	return self.email
@@ -166,16 +166,16 @@ def download(token):
 		user = User(email=email, datetime=datetime.now())
 		db.session.add(user)
 		db.session.commit()	
-	if user and not user.is_active:
-		app.logger.debug("User unactive: %s" % email)
-		return abort(410)
-	user.is_active = False
-	db.session.commit()
+	if user and user.downloaded:
+		app.logger.debug("User already downloaded: %s" % email)
+		return abort(410)	
 	expiration = app.config['REDIRECT_EXPIRATION']
 	try:
 		app.logger.debug("Creating a link for resource: %s" % app.config['RESOURCE_FILEPATH'])
 		response = smartfile_client.post('/path/exchange', path=app.config['RESOURCE_FILEPATH'], expiration=expiration)
 		app.logger.debug("SmartFile response: %s" % response)
+		user.downloaded = True
+		db.session.commit()
 		return redirect(response.get('url'))
 	except smartfile.ResponseError as e:
 		#app.logger.error("Failed creating a link for token %s: %s" % (token, e))
