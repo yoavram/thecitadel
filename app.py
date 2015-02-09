@@ -8,7 +8,7 @@ sys.stdout = codecs.getwriter('utf-8')(sys.stdout)
 import os
 import re
 from datetime import timedelta, datetime
-from flask import Flask, request, redirect, jsonify, url_for, abort
+from flask import Flask, request, redirect, jsonify, url_for, abort, render_template
 from flask_sslify import SSLify
 from flask.ext.mandrill import Mandrill
 from flask.ext.sqlalchemy import SQLAlchemy
@@ -40,6 +40,7 @@ MANDRILL_API_KEY = os.environ.get('MANDRILL_APIKEY')
 MANDRILL_DEFAULT_FROM = os.environ.get('MANDRILL_USERNAME')
 SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL')
 RESOURCE_FILEPATH = os.environ.get('RESOURCE_FILEPATH')
+TERMS_URL = os.environ.get('TERMS_URL')
 
 
 app = Flask(__name__)
@@ -113,7 +114,7 @@ def root():
 @app.route('/signin', methods=("GET", "POST"))
 def signin():
 	if request.method == "GET":
-		return app.send_static_file('signin.html')
+		return render_template('signin.html')
 	password = request.form.get('password', '')	
 	if not pwd_context.verify(password, app.config['PASSWORD']):
 		app.logger.info("Bad password: %s" % password)
