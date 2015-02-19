@@ -20,7 +20,7 @@ import smartfile
 from sqlalchemy.dialects.postgresql import JSON
 
 
-mail_template = '''<p>Thank you for registering .<br>
+mail_template = '''<p>Thank you for registering .<br><br>
 To proceed, please follow this link or copy it into your browser address bar:<br>
 <a href='%s'>%s</a>.<br>
 <br>
