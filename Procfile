@@ -1,2 +1,2 @@
 #web: python app.py
-web: gunicorn app:app --log-file -
+web: gunicorn -b "0.0.0.0:$PORT" -w 3 app:app
